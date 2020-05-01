@@ -15,8 +15,8 @@ namespace HMM
         static void Main(string[] args)
         {
             // Init vars for the HMM and observation sequence
-            HiddenMarkovModel model = null;
-            int[] obs = null;
+            HiddenMarkovModel hmmodel = null;
+            int[] obser = null;
 
             // Init var to read user input
             string command;
@@ -41,7 +41,7 @@ namespace HMM
 
             while (true)
             {
-                Console.WriteLine(">");
+                Console.Write(">");
                 command = Console.ReadLine();
 
                 switch (command)
@@ -49,30 +49,36 @@ namespace HMM
                     #region CLI Switch
 
                     case "loadmodel":
-                        model = LoadModel();
+                        hmmodel = LoadModel();
 
                         break;
 
                     case "loadobs":
-                        obs = LoadObservation();
+                        obser = LoadObservation();
 
                         break;
 
                     case "writemodel":
 
-                        WriteModel(model);
+                        WriteModel(hmmodel);
 
                         break;
 
                     case "writeobs":
 
-                        WriteObservation(obs);
+                        WriteObservation(obser);
 
                         break;
 
                     case "obsv_prob":
-                        double p1 = Forward(model, obs, false);
+                        HiddenMarkovModel model = LoadModel();
+                        int[] obs = LoadObservation();
+                        double p1 = Forward(model, obs);
+
+                        WriteModel(model);
+                        WriteObservation(obs);
                         Console.WriteLine("\nProbability of the given test sequence: " + p1);
+
                         break;
 
                     case "viterbi":
@@ -83,7 +89,7 @@ namespace HMM
                         Console.WriteLine();
                         Console.Write("  ");
                         double prob = 0;
-                        int[] result = Viterbi(model, obs, out prob);
+                        int[] result = Viterbi(hmmodel, obser, out prob);
                         for (int i = 0; i < result.Length; i++) Console.Write(result[i] + "  ");
                         Console.WriteLine();
                         Console.WriteLine();
@@ -117,15 +123,17 @@ namespace HMM
 
         private static void WriteObservation(int[] obs)
         {
-            Console.WriteLine("Observation:");
+            Console.Write("\nObservation: ");
 
             for (int i = 0; i < obs.Length; i++)
                 Console.Write(obs[i] + " ");
+
+            Console.WriteLine();
         }
 
         private static void WriteModel(HiddenMarkovModel model)
         {
-            Console.WriteLine("\nA:");
+            Console.WriteLine("A:");
             for (int i = 0; i < model.A.GetLength(0); i++)
             {
                 for (int j = 0; j < model.A.GetLength(1); j++)
@@ -145,7 +153,7 @@ namespace HMM
                 Console.WriteLine();
             }
 
-            Console.WriteLine("\nPi:");
+            Console.Write("\nPi: ");
             for (int i = 0; i < model.Pi.Length; i++)
                 Console.Write(model.Pi[i] + " ");
             Console.WriteLine();
@@ -165,21 +173,15 @@ namespace HMM
             string line = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "testdata.txt"));
 
             int[] obs = new int[line.Split().Length];
- 
+
             for (int i = 0; i < line.Split().Length; i++)
                 obs[i] = int.Parse(line.Split()[i]);
 
             return obs;
         }
 
-        /// <summary>
-        ///   Returns the probability that a given HMM has generated the given sequence, using forward procedure.
-        /// </summary>
-        /// <param name="model" />A HiddenMarkovModel object
-        /// <param name="obs" />Observation sequence as an integer array
-        /// <param name="log" />Toggles return of log / plain likelihoods
-        /// <returns>The probability (double) that the given HMM has generated the given sequence</returns>
-        static double Forward(HiddenMarkovModel model, int[] obs, bool log)
+
+        static double Forward(HiddenMarkovModel model, int[] obs)
         {
 
             double[,] A = model.A;
@@ -206,7 +208,7 @@ namespace HMM
 
             // Scaling
             // Implementation of scaling coefficients
-            // slightly differentthan Rabiner tutorial
+            // slightly different than Rabiner tutorial
             double[] c = new double[T];
             for (int t = 0; t < T; t++)
             {
@@ -217,8 +219,7 @@ namespace HMM
             }
 
             // 3) Termination
-            if (log) for (int t = 0; t < T; t++) prob += Math.Log(c[t]);
-            else for (int i = 0; i < N; i++) prob += alpha[T - 1, i];
+            for (int i = 0; i < N; i++) prob += alpha[T - 1, i];
 
             // Return result
             return prob;
@@ -305,50 +306,43 @@ namespace HMM
         public HiddenMarkovModel(List<String> lines)
         {
 
-            try
+            // Find out where data begins
+            int A_index = lines.IndexOf("A");
+            int B_index = lines.IndexOf("B");
+            int pi_index = lines.IndexOf("Pi");
+
+            // Get lines with data
+            List<String> A_list = lines.GetRange(A_index + 2, B_index - A_index - 3);
+            List<String> B_list = lines.GetRange(B_index + 2, pi_index - B_index - 3);
+            String pi_string = lines[pi_index + 2];
+
+            // Parse A
+            A = new double[A_list.Count, A_list[0].Split().Length];
+            for (int i = 0; i < A_list.Count; i++)
             {
-                // Find out where data begins
-                int A_index = lines.IndexOf("A");
-                int B_index = lines.IndexOf("B");
-                int pi_index = lines.IndexOf("Pi");
-
-                // Get lines with data
-                List<String> A_list = lines.GetRange(A_index + 2, B_index - A_index - 3);
-                List<String> B_list = lines.GetRange(B_index + 2, pi_index - B_index - 3);
-                String pi_string = lines[pi_index + 2];
-
-                // Parse A
-                A = new double[A_list.Count, A_list[0].Split().Length];
-                for (int i = 0; i < A_list.Count; i++)
+                for (int j = 0; j < A_list[0].Split().Length; j++)
                 {
-                    for (int j = 0; j < A_list[0].Split().Length; j++)
-                    {
-                        A[i, j] = double.Parse(A_list[i].Split()[j]);
-                    }
+                    A[i, j] = double.Parse(A_list[i].Split()[j]);
                 }
-
-                // Parse B
-                B = new double[B_list.Count, B_list[0].Split().Length];
-                for (int i = 0; i < B_list.Count; i++)
-                {
-                    for (int j = 0; j < B_list[0].Split().Length; j++)
-                    {
-                        B[i, j] = double.Parse(B_list[i].Split()[j]);
-                    }
-                }
-
-                // Parse Pi
-                Pi = new double[pi_string.Split().Length];
-                for (int i = 0; i < pi_string.Split().Length; i++)
-                {
-                    Pi[i] = double.Parse(pi_string.Split()[i]);
-                }
-
             }
-            catch (Exception)
+
+            // Parse B
+            B = new double[B_list.Count, B_list[0].Split().Length];
+            for (int i = 0; i < B_list.Count; i++)
             {
-                throw;
+                for (int j = 0; j < B_list[0].Split().Length; j++)
+                {
+                    B[i, j] = double.Parse(B_list[i].Split()[j]);
+                }
             }
+
+            // Parse Pi
+            Pi = new double[pi_string.Split().Length];
+            for (int i = 0; i < pi_string.Split().Length; i++)
+            {
+                Pi[i] = double.Parse(pi_string.Split()[i]);
+            }
+
         }
     }
 }
