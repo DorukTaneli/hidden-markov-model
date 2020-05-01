@@ -54,80 +54,19 @@ namespace HMM
                         break;
 
                     case "loadobs":
-                        Console.WriteLine();
-
-                        using (OpenFileDialog fd = new OpenFileDialog())
-                        {
-                            fd.Filter = "Plain text files (*.txt)|*.txt|All files (*.*)|*.*";
-                            if (fd.ShowDialog() == DialogResult.OK)
-                            {
-                                using (StreamReader sr = new StreamReader(fd.FileName))
-                                {
-                                    try
-                                    {
-                                        string line = sr.ReadLine();
-                                        obs = new int[line.Split().Length];
-                                        if (sr.ReadLine() != null) throw (new Exception());
-                                        for (int i = 0; i < line.Split().Length; i++)
-                                        {
-                                            obs[i] = int.Parse(line.Split()[i]);
-                                        }
-                                        Console.WriteLine("Observation sequence loaded from:\n" + fd.FileName);
-                                    }
-                                    catch (Exception)
-                                    {
-                                        Console.WriteLine("ERROR: Cannot read from file!");
-                                    }
-                                }
-                            }
-                            else Console.WriteLine("Aborted.");
-                        }
-                        break;
-
-                    case "showmodel":
-
-                        if (model != null) {
-
-                            Console.WriteLine("\nA:");
-                            for (int i = 0; i < model.A.GetLength(0); i++) {
-                                for (int j = 0; j < model.A.GetLength(1); j++) {
-                                    Console.Write(model.A[i, j] + " ");
-                                }
-                                Console.WriteLine();
-                            }
-
-                            Console.WriteLine("\nB:");
-                            for (int i = 0; i < model.B.GetLength(0); i++) {
-                                for (int j = 0; j < model.B.GetLength(1); j++) {
-                                    Console.Write(model.B[i, j] + " ");
-                                }
-                                Console.WriteLine();
-                            }
-
-                            Console.WriteLine("\nPi:");
-                            for (int i = 0; i < model.Pi.Length; i++)
-                                Console.Write(model.Pi[i] + " ");
-                            Console.WriteLine();
-
-                        } else {
-                            Console.WriteLine("No model loaded!");
-                        }
+                        obs = LoadObservation();
 
                         break;
 
-                    case "showobs":
+                    case "writemodel":
 
-                        if (obs != null) {
-                            Console.WriteLine("Currently loaded observation sequence:");
-                            Console.WriteLine();
+                        WriteModel(model);
 
-                            Console.Write("  ");
-                            for (int i = 0; i < obs.Length; i++) Console.Write(obs[i] + "  ");
-                            Console.WriteLine();
+                        break;
 
-                        } else {
-                            Console.WriteLine("No observation sequence loaded!");
-                        }
+                    case "writeobs":
+
+                        WriteObservation(obs);
 
                         break;
 
@@ -176,6 +115,42 @@ namespace HMM
 
         }
 
+        private static void WriteObservation(int[] obs)
+        {
+            Console.WriteLine("Observation:");
+
+            for (int i = 0; i < obs.Length; i++)
+                Console.Write(obs[i] + " ");
+        }
+
+        private static void WriteModel(HiddenMarkovModel model)
+        {
+            Console.WriteLine("\nA:");
+            for (int i = 0; i < model.A.GetLength(0); i++)
+            {
+                for (int j = 0; j < model.A.GetLength(1); j++)
+                {
+                    Console.Write(model.A[i, j] + " ");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("\nB:");
+            for (int i = 0; i < model.B.GetLength(0); i++)
+            {
+                for (int j = 0; j < model.B.GetLength(1); j++)
+                {
+                    Console.Write(model.B[i, j] + " ");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("\nPi:");
+            for (int i = 0; i < model.Pi.Length; i++)
+                Console.Write(model.Pi[i] + " ");
+            Console.WriteLine();
+        }
+
         private static HiddenMarkovModel LoadModel()
         {
             List<String> lines = File.ReadAllLines(Path.Combine(Environment.CurrentDirectory, "model.txt")).ToList();
@@ -183,6 +158,18 @@ namespace HMM
             HiddenMarkovModel model = new HiddenMarkovModel(lines);
 
             return model;
+        }
+
+        private static int[] LoadObservation()
+        {
+            string line = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "testdata.txt"));
+
+            int[] obs = new int[line.Split().Length];
+ 
+            for (int i = 0; i < line.Split().Length; i++)
+                obs[i] = int.Parse(line.Split()[i]);
+
+            return obs;
         }
 
         /// <summary>
