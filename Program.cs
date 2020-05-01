@@ -33,7 +33,6 @@ namespace HMM
             showmodel        prints current model parameters
             showobs          prints current observation sequence
             obsv_prob        prints probability of observation sequence given model
-            obsv_prob log    prints probability of observation sequence given model
             viterbi          prints best state sequence, number of state transitions
                              and likelihood, given observation sequence and model";
 
@@ -41,7 +40,7 @@ namespace HMM
 
             while (true)
             {
-                Console.Write(">");
+                Console.Write("\n>");
                 command = Console.ReadLine();
 
                 switch (command)
@@ -77,7 +76,7 @@ namespace HMM
 
                         WriteModel(model);
                         WriteObservation(obs);
-                        Console.WriteLine("\nProbability of the given test sequence: " + p1);
+                        Console.WriteLine("\nProbability of the observation given model: " + p1);
 
                         break;
 
@@ -133,7 +132,7 @@ namespace HMM
 
         private static void WriteModel(HiddenMarkovModel model)
         {
-            Console.WriteLine("A:");
+            Console.WriteLine("\nA:");
             for (int i = 0; i < model.A.GetLength(0); i++)
             {
                 for (int j = 0; j < model.A.GetLength(1); j++)
