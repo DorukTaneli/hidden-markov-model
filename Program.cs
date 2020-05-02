@@ -9,31 +9,28 @@ namespace HMM
     {
         static void Main(string[] args)
         {
-            // Init vars for the HMM and observation sequence
+            string commandList = 
+@"Commands:      
+obsv_prob       Part 1: calculates probability of observation sequence(testdata.txt) given model(model.txt)
+viterbi         Part 2: calculates: 
+                        best state sequence given observation(testdata.txt) and model(model.txt), 
+                        probability of the observation given model(model.txt) and state sequence(newly calculated),
+                        and number of state transitions for the new state sequence
+learn           Part 3: creates a hidden markov model given observation list using Baum-Welch learning method,
+                        writes the model to HMMdescription.txt";
+
+            Console.WriteLine(commandList);
+
             HiddenMarkovModel model;
             int[] obs;
-
-            // Init var to read user input
-            string command;
-
-            // Title and help text
-            string usage = @"
-            Commands
-            --------
-                          
-            obsv_prob        Part 1: calculates probability of observation sequence given model
-            viterbi          Part 2: calculates best state sequence given observation and model, 
-                                     Probability of the observation given model and state sequence,
-                                     and number of state transitions";
-
-            Console.WriteLine(usage);
+            List<int[]> obsList;
 
             while (true)
             {
                 Console.Write("\n>");
-                command = Console.ReadLine();
+                string input = Console.ReadLine();
 
-                switch (command)
+                switch (input)
                 {
                     case "obsv_prob":
                         model = LoadModel();
@@ -65,8 +62,20 @@ namespace HMM
                         Console.WriteLine("Number of state transitions: " + transitions);
                         break;
 
+                    case "learn":
+                        obsList = LoadObservationList();
+                        Console.WriteLine("Learning with the data: \n");
+                        WriteObservationList(obsList);
+
+                        Console.WriteLine("Baum-Welch Iteration: ");
+                        model = Learn(obsList);
+                        WriteModeltoFile(model);
+                        Console.WriteLine("\nDone. Model is written to HMMdescription.txt");
+
+                        break;
+
                     default:
-                        Console.WriteLine("Command list is at top");
+                        Console.WriteLine(commandList);
                         break;
                 }
 
@@ -74,6 +83,7 @@ namespace HMM
 
         }
 
+        //IO Functions
         private static void WriteObservation(int[] obs)
         {
             Console.Write("\nObservation: ");
@@ -112,6 +122,39 @@ namespace HMM
             Console.WriteLine();
         }
 
+        private static void WriteModeltoFile(HiddenMarkovModel model)
+        {
+            using (StreamWriter sw = new StreamWriter(Path.Combine(Environment.CurrentDirectory, "HMMdescription.txt"))) 
+            {
+                sw.WriteLine("Number of States: " + model.A.GetLength(0));
+
+                sw.WriteLine("\nA:");
+                for (int i = 0; i < model.A.GetLength(0); i++)
+                {
+                    for (int j = 0; j < model.A.GetLength(1); j++)
+                    {
+                        sw.Write(model.A[i, j] + " ");
+                    }
+                    sw.WriteLine();
+                }
+
+                sw.WriteLine("\nB:");
+                for (int i = 0; i < model.B.GetLength(0); i++)
+                {
+                    for (int j = 0; j < model.B.GetLength(1); j++)
+                    {
+                        sw.Write(model.B[i, j] + " ");
+                    }
+                    sw.WriteLine();
+                }
+
+                sw.Write("\nPi: ");
+                for (int i = 0; i < model.Pi.Length; i++)
+                    sw.Write(model.Pi[i] + " ");
+                sw.WriteLine();
+            }
+        }
+
         private static HiddenMarkovModel LoadModel()
         {
             List<String> lines = File.ReadAllLines(Path.Combine(Environment.CurrentDirectory, "model.txt")).ToList();
@@ -133,7 +176,31 @@ namespace HMM
             return obs;
         }
 
+        private static List<int[]> LoadObservationList()
+        {
+            List<String> lines = File.ReadAllLines(Path.Combine(Environment.CurrentDirectory, "data.txt")).ToList();
 
+            List<int[]> obsList = new List<int[]>();
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                obsList.Add(Array.ConvertAll(lines[i].Trim().Split(), int.Parse));
+            }
+
+            return obsList;
+        }
+
+        private static void WriteObservationList(List<int[]> obsList)
+        {
+            for (int i = 0; i < obsList.Count; i++)
+            {
+                for (int j = 0; j < obsList[0].Length; j++)
+                    Console.Write(obsList[i][j]);
+                Console.WriteLine();
+            }
+        }
+
+        //Algorithm for Part1
         static double Forward(HiddenMarkovModel model, int[] obs)
         {
 
@@ -178,7 +245,7 @@ namespace HMM
             return prob;
         }
 
-
+        //Algorithm for Part2
         static int[] Viterbi(HiddenMarkovModel model, int[] obs, out double prob)
         {
 
@@ -247,9 +314,198 @@ namespace HMM
 
         }
 
+        //Algorithms for Part3
+        static HiddenMarkovModel Learn(List<int[]> obss)
+        {
+
+            // Store number of observation sequences
+            int L = obss.Count;
+
+            // Estimate N assuming no of states = no of unique observations
+            int N = obss.SelectMany(a => a).Distinct().Count();
+
+            // Estimate Pi
+            double[] pi = new double[N];
+            for (int i = 0; i < N; i++)
+            {
+                foreach (int[] obs in obss) if (obs[0] == i) pi[i]++;
+                pi[i] /= L;
+            }
+
+            // Init Random for initial estimates of A and B
+            Random r = new Random();
+            // Initial estimate for A
+            double[,] A = new double[N, N];
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    A[i, j] = r.Next();
+                }
+            }
+            for (int i = 0; i < N; i++)
+            {
+                double sum = 0.0;
+                for (int j = 0; j < N; j++) sum += A[i, j];
+                for (int j = 0; j < N; j++) A[i, j] /= sum;
+            }
+            // Initial estimate for B
+            double[,] B = new double[N, N];
+            for (int i = 0; i < N; i++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    B[i, j] = r.Next();
+                }
+            }
+            for (int i = 0; i < N; i++)
+            {
+                double sum = 0.0;
+                for (int j = 0; j < N; j++) sum += B[i, j];
+                for (int j = 0; j < N; j++) B[i, j] /= sum;
+            }
+
+            // Loop Baum-Welch for 10,000 times
+            for (int iter = 0; iter < 10000; iter++)
+            {
+
+                Console.CursorLeft = 0;
+                Console.Write((iter + 1) + " / " + 10000);
+
+                // Init Gamma and Xi vars
+                List<double[,]> gammas = new List<double[,]>();
+                List<double[,,]> xis = new List<double[,,]>();
+
+                // Produce a Gamma and Xi matrix for every observation sequence
+                foreach (int[] obs in obss)
+                {
+
+                    int T = obs.Length;
+
+                    // Calculate forward and backward vars and probability of the sequence
+                    double[,] alpha = BWForward(A, B, pi, obs);
+                    double[,] beta = BWBackward(A, B, pi, obs);
+                    double prob = 0.0;
+                    for (int i = 0; i < N; i++) prob += alpha[T - 1, i];
+
+                    // Gamma variable
+                    double[,] gamma = new double[T, N];
+                    for (int t = 0; t < T; t++)
+                    {
+                        for (int i = 0; i < N; i++)
+                        {
+                            gamma[t, i] = alpha[t, i] * beta[t, i] / prob;
+                        }
+                    }
+                    gammas.Add(gamma);
+
+                    // Xi variable
+                    double[,,] xi = new double[T, N, N];
+                    for (int t = 0; t < T - 1; t++)
+                    {
+                        for (int i = 0; i < N; i++)
+                        {
+                            for (int j = 0; j < N; j++)
+                            {
+                                xi[t, i, j] = alpha[t, i] * A[i, j] * B[j, obs[t + 1]] * beta[t + 1, j] / prob;
+                            }
+                        }
+                    }
+                    xis.Add(xi);
+
+                }
+
+                // Adjust A
+                for (int i = 0; i < 2; i++)
+                {
+                    for (int j = 0; j < 2; j++)
+                    {
+                        double num = 0.0;
+                        double den = 0.0;
+                        for (int l = 0; l < L; l++)
+                        {
+                            for (int t = 0; t < 9; t++)
+                            {
+                                num += xis[l][t, i, j];
+                                den += gammas[l][t, i];
+                            }
+                        }
+                        A[i, j] = num / den;
+                    }
+                }
+                // Adjust B
+                for (int j = 0; j < 2; j++)
+                {
+                    for (int k = 0; k < 2; k++)
+                    {
+                        double num = 0.0;
+                        double den = 0.0;
+                        for (int l = 0; l < L; l++)
+                        {
+                            for (int t = 0; t < obss[0].Length; t++)
+                            {
+                                if (obss[l][t] == k) num += gammas[l][t, j];
+                                den += gammas[l][t, j];
+                            }
+                        }
+                        B[j, k] = num / den;
+                    }
+                }
+
+            }
+
+            return new HiddenMarkovModel(A, B, pi);
+      }
+
+        //Forward probabilities function to be used in learning
+        private static double[,] BWForward(double[,] A, double[,] B, double[] pi, int[] obs)
+        {
+
+            int N = A.GetLength(0);
+            int T = obs.Length;
+
+            // 1) Initialization
+            double[,] alpha = new double[T, N];
+            for (int i = 0; i < N; i++) alpha[0, i] = pi[i] * B[i, obs[0]];
+            // 2) Induction
+            for (int t = 0; t < T - 1; t++)
+            {
+                for (int j = 0; j < N; j++)
+                {
+                    double sum = 0;
+                    for (int i = 0; i < N; i++) sum += alpha[t, i] * A[i, j];
+                    alpha[t + 1, j] = sum * B[j, obs[t + 1]];
+                }
+            }
+
+            return alpha;
+        }
+
+        //Backward probabilities function to be used in learning
+        static double[,] BWBackward(double[,] A, double[,] B, double[] pi, int[] obs)
+        {
+
+            int N = A.GetLength(0);
+            int T = obs.Length;
+
+            // 1) Initialization
+            double[,] beta = new double[T, N];
+            for (int i = 0; i < N; i++) beta[T - 1, i] = 1;
+            // 2) Induction
+            for (int t = T - 2; t >= 0; t--)
+            {
+                for (int i = 0; i < N; i++)
+                {
+                    beta[t, i] = 0;
+                    for (int j = 0; j < N; j++) beta[t, i] += A[i, j] * B[j, obs[t + 1]] * beta[t + 1, j];
+                }
+            }
+
+            return beta;
+        }
     }
 
-
+    //HiddenMarkovModel class that holds a 
     class HiddenMarkovModel
     {
         public double[,] A;
@@ -258,7 +514,6 @@ namespace HMM
 
         public HiddenMarkovModel(List<String> lines)
         {
-
             // Find out where data begins
             int A_index = lines.IndexOf("A");
             int B_index = lines.IndexOf("B");
@@ -296,6 +551,12 @@ namespace HMM
                 Pi[i] = double.Parse(pi_string.Split()[i]);
             }
 
+        }
+
+        public HiddenMarkovModel(double[,] A, double[,] B, double[] Pi) {
+            this.A = A;
+            this.B = B;
+            this.Pi = Pi;
         }
     }
 }
