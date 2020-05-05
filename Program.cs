@@ -7,6 +7,8 @@ namespace HMM
 {
     class Program
     {
+        public const int BW_ITER = 10000;
+
         static void Main(string[] args)
         {
             string commandList = 
@@ -40,7 +42,7 @@ learn           Part 3: creates a hidden markov model given observation list usi
                         WriteModel(model);
                         WriteObservation(obs);
                         Console.WriteLine("\nProbability of the observation given model: " + p1);
-
+                        Console.WriteLine("\nLog probability: " + Math.Log(p1));
                         break;
 
                     case "viterbi":
@@ -56,6 +58,7 @@ learn           Part 3: creates a hidden markov model given observation list usi
                         for (int i = 0; i < stateSequence.Length; i++) Console.Write(stateSequence[i] + " ");
 
                         Console.WriteLine("\nProbability of the observation given model and state sequence: " + prob);
+                        Console.WriteLine("Log probability: " + Math.Log(prob));
 
                         int transitions = 0;
                         for (int i = 1; i < stateSequence.Length; i++) if (stateSequence[i] != stateSequence[i - 1]) transitions++;
@@ -64,14 +67,13 @@ learn           Part 3: creates a hidden markov model given observation list usi
 
                     case "learn":
                         obsList = LoadObservationList();
-                        Console.WriteLine("Learning with the data: \n");
                         WriteObservationList(obsList);
+                        Console.WriteLine("Learning with ^this^ data. Please wait.");
 
-                        Console.WriteLine("Baum-Welch Iteration: ");
                         model = Learn(obsList);
                         WriteModeltoFile(model);
+                        WriteModel(model);
                         Console.WriteLine("\nDone. Model is written to HMMdescription.txt");
-
                         break;
 
                     default:
@@ -116,7 +118,7 @@ learn           Part 3: creates a hidden markov model given observation list usi
                 Console.WriteLine();
             }
 
-            Console.Write("\nPi: ");
+            Console.WriteLine("\nPi: ");
             for (int i = 0; i < model.Pi.Length; i++)
                 Console.Write(model.Pi[i] + " ");
             Console.WriteLine();
@@ -148,7 +150,7 @@ learn           Part 3: creates a hidden markov model given observation list usi
                     sw.WriteLine();
                 }
 
-                sw.Write("\nPi: ");
+                sw.WriteLine("\nPi: ");
                 for (int i = 0; i < model.Pi.Length; i++)
                     sw.Write(model.Pi[i] + " ");
                 sw.WriteLine();
@@ -203,305 +205,285 @@ learn           Part 3: creates a hidden markov model given observation list usi
         //Algorithm for Part1
         static double Forward(HiddenMarkovModel model, int[] obs)
         {
-
             double[,] A = model.A;
             double[,] B = model.B;
             double[] pi = model.Pi;
-            int N = A.GetLength(0);
-            int T = obs.Length;
-            double prob = 0;
+            int N = A.GetLength(0); //length of state-graph
+            int T = obs.Length; //length of observations
+            double[,] forward = new double[N, T]; //probability matrix
 
-            // 1) Initialization
-            double[,] alpha = new double[T, N];
-            for (int i = 0; i < N; i++) alpha[0, i] = pi[i] * B[i, obs[0]];
+            //initialization step
+            for (int s = 0; s < N; s++) //for each state s
+                forward[s, 0] = pi[s] * B[s, obs[0]];
 
-            // 2) Induction
-            for (int t = 0; t < T - 1; t++)
+            //recursion step
+            for (int t = 1; t < T; t++) //for each time step t
             {
-                for (int j = 0; j < N; j++)
+                for (int s = 0; s < N; s++) //for eash state s
                 {
-                    double sum = 0;
-                    for (int i = 0; i < N; i++) sum += alpha[t, i] * A[i, j];
-                    alpha[t + 1, j] = sum * B[j, obs[t + 1]];
+                    double sum = 0.0;
+                    for (int si = 0; si < N; si++) //si: s'
+                        sum += forward[si, t - 1] * A[si, s];
+                    forward[s, t] = sum * B[s, obs[t]];
                 }
             }
 
-            // Scaling
-            // Implementation of scaling coefficients
-            // slightly different than Rabiner tutorial
-            double[] c = new double[T];
-            for (int t = 0; t < T; t++)
-            {
-                for (int i = 0; i < N; i++)
-                {
-                    c[t] += alpha[t, i];
-                }
-            }
+            //termination step
+            double forwardprob = 0.0;
+            for (int s = 0; s < N; s++) 
+                forwardprob += forward[s, T - 1];
 
-            // 3) Termination
-            for (int i = 0; i < N; i++) prob += alpha[T - 1, i];
-
-            // Return result
-            return prob;
+            return forwardprob;
         }
 
         //Algorithm for Part2
-        static int[] Viterbi(HiddenMarkovModel model, int[] obs, out double prob)
+        static int[] Viterbi(HiddenMarkovModel model, int[] obs, out double bestpathprob)
         {
-
             double[,] A = model.A;
             double[,] B = model.B;
             double[] pi = model.Pi;
-            int T = obs.Length;
-            int N = A.GetLength(0);
-            double[,] delta = new double[T, N];
-            int[,] psi = new int[T, N];
-            int[] q = new int[T];
+            int N = A.GetLength(0); //length of state-graph
+            int T = obs.Length; //length of observations
+            double[,] viterbi = new double[N, T]; //path probability matrix
+            int[,] backpointer = new int[N, T];
+            int bestpathpointer;
+            int[] bestpath = new int[T];
 
-            // 1) Initialization
-            for (int i = 0; i < N; i++)
+            //initialization step
+            for (int i = 0; i < N; i++) //for each state s
             {
-                delta[0, i] = pi[i] * B[i, obs[0]];
-                psi[0, i] = 0;
+                viterbi[i, 0] = pi[i] * B[i, obs[0]];
+                backpointer[i, 0] = 0;
             }
 
-            // 2) Recursion
-            for (int t = 1; t < T; t++)
+            //recursion step
+            for (int t = 1; t < T; t++) //for each time step t
             {
-                for (int j = 0; j < N; j++)
+                for (int s = 0; s < N; s++) //for each state s
                 {
-
                     double max = 0;
-                    double alt = 0;
                     int argmax = 0;
-                    for (int i = 0; i < N; i++)
+                    double tmp;
+
+                    for (int si = 0; si < N; si++) //si: s'
                     {
-                        alt = delta[t - 1, i] * A[i, j];
-                        if (alt > max)
+                        tmp = viterbi[si, t - 1] * A[si, s];
+                        if (tmp > max)
                         {
-                            max = alt;
-                            argmax = i;
+                            max = tmp;
+                            argmax = si;
                         }
                     }
 
-                    delta[t, j] = max * B[j, obs[t]];
-                    psi[t, j] = argmax;
-
+                    viterbi[s, t] = max * B[s, obs[t]];
+                    backpointer[s, t] = argmax;
                 }
             }
 
-            // 3) Termination
-            double max1 = 0;
-            double alt1 = 0;
-            int argmax1 = 0;
-            for (int i = 0; i < N; i++)
+            //termination step
+            double max2 = 0;
+            int argmax2 = 0;
+            double tmp2;
+
+            for (int s = 0; s < N; s++)
             {
-                alt1 = delta[T - 1, i];
-                if (alt1 > max1)
+                tmp2 = viterbi[s, T - 1];
+                if (tmp2 > max2)
                 {
-                    max1 = alt1;
-                    argmax1 = i;
+                    max2 = tmp2;
+                    argmax2 = s;
                 }
             }
-            q[T - 1] = argmax1;
-            prob = max1;
+            bestpathprob = max2;
+            bestpathpointer = argmax2;
 
-            // 4) Backtracking
-            for (int t = T - 2; t >= 0; t--) q[t] = psi[t + 1, q[t + 1]];
+            bestpath[T - 1] = bestpathpointer;
+            for (int t = T - 2; t >= 0; t--) 
+                bestpath[t] = backpointer[bestpath[t + 1], t + 1];
 
-            // Return result
-            return q;
-
+            return bestpath;
         }
 
         //Algorithms for Part3
-        static HiddenMarkovModel Learn(List<int[]> obss)
+        static HiddenMarkovModel Learn(List<int[]> obsList)
         {
+            int L = obsList.Count; //observation sequence count
 
-            // Store number of observation sequences
-            int L = obss.Count;
+            //number of states = no of unique observations
+            int N = obsList.SelectMany(a => a).Distinct().Count();
 
-            // Estimate N assuming no of states = no of unique observations
-            int N = obss.SelectMany(a => a).Distinct().Count();
-
-            // Estimate Pi
+            // Estimate Pi from first element of observations
             double[] pi = new double[N];
             for (int i = 0; i < N; i++)
             {
-                foreach (int[] obs in obss) if (obs[0] == i) pi[i]++;
+                foreach (int[] obs in obsList) 
+                    if (obs[0] == i) 
+                        pi[i]++;
                 pi[i] /= L;
             }
 
-            // Init Random for initial estimates of A and B
-            Random r = new Random();
-            // Initial estimate for A
+            Random r = new Random(); // Random for initial A and B
+
+            //initial random values for A
             double[,] A = new double[N, N];
             for (int i = 0; i < N; i++)
-            {
                 for (int j = 0; j < N; j++)
-                {
                     A[i, j] = r.Next();
-                }
-            }
+
+            //normalize A
             for (int i = 0; i < N; i++)
             {
                 double sum = 0.0;
-                for (int j = 0; j < N; j++) sum += A[i, j];
-                for (int j = 0; j < N; j++) A[i, j] /= sum;
+                for (int j = 0; j < N; j++)
+                    sum += A[i, j];
+
+                for (int j = 0; j < N; j++)
+                    A[i, j] /= sum;
             }
-            // Initial estimate for B
+
+            //initial random values for B
             double[,] B = new double[N, N];
             for (int i = 0; i < N; i++)
-            {
                 for (int j = 0; j < N; j++)
-                {
                     B[i, j] = r.Next();
-                }
-            }
+
+            //normalize B
             for (int i = 0; i < N; i++)
             {
                 double sum = 0.0;
-                for (int j = 0; j < N; j++) sum += B[i, j];
-                for (int j = 0; j < N; j++) B[i, j] /= sum;
+                for (int j = 0; j < N; j++) 
+                    sum += B[i, j];
+                for (int j = 0; j < N; j++)
+                    B[i, j] /= sum;
             }
 
-            // Loop Baum-Welch for 10,000 times
-            for (int iter = 0; iter < 10000; iter++)
+            //Loop Baum-Welch for BW_ITER times
+            for (int iter = 0; iter < BW_ITER; iter++)
             {
+                List<double[,]> gammaList = new List<double[,]>();
+                List<double[,,]> epsilonList = new List<double[,,]>();
 
-                Console.CursorLeft = 0;
-                Console.Write((iter + 1) + " / " + 10000);
-
-                // Init Gamma and Xi vars
-                List<double[,]> gammas = new List<double[,]>();
-                List<double[,,]> xis = new List<double[,,]>();
-
-                // Produce a Gamma and Xi matrix for every observation sequence
-                foreach (int[] obs in obss)
+                foreach (int[] obs in obsList) //foreach observation sequence
                 {
-
                     int T = obs.Length;
 
-                    // Calculate forward and backward vars and probability of the sequence
-                    double[,] alpha = BWForward(A, B, pi, obs);
-                    double[,] beta = BWBackward(A, B, pi, obs);
+                    //Calculate the forward and backward probability for each HMM state.
+                    double[,] fwd = BWForward(A, B, pi, obs);
+                    double[,] bwd = BWBackward(A, B, pi, obs);
+
                     double prob = 0.0;
-                    for (int i = 0; i < N; i++) prob += alpha[T - 1, i];
+                    for (int i = 0; i < N; i++) 
+                        prob += fwd[T - 1, i];
 
-                    // Gamma variable
+                    //Determine the frequency of the transition-emission pair values
+                    //and divide by the probability of the entire string.
                     double[,] gamma = new double[T, N];
-                    for (int t = 0; t < T; t++)
-                    {
-                        for (int i = 0; i < N; i++)
-                        {
-                            gamma[t, i] = alpha[t, i] * beta[t, i] / prob;
-                        }
-                    }
-                    gammas.Add(gamma);
+                    for (int i = 0; i < T; i++)
+                        for (int j = 0; j < N; j++)
+                            gamma[i, j] = fwd[i, j] * bwd[i, j] / prob;
 
-                    // Xi variable
-                    double[,,] xi = new double[T, N, N];
+                    gammaList.Add(gamma);
+
+                    double[,,] epsilon = new double[T, N, N];
                     for (int t = 0; t < T - 1; t++)
-                    {
                         for (int i = 0; i < N; i++)
-                        {
                             for (int j = 0; j < N; j++)
-                            {
-                                xi[t, i, j] = alpha[t, i] * A[i, j] * B[j, obs[t + 1]] * beta[t + 1, j] / prob;
-                            }
-                        }
-                    }
-                    xis.Add(xi);
+                                epsilon[t, i, j] = fwd[t, i] * A[i, j] * B[j, obs[t + 1]] * bwd[t + 1, j] / prob;
+
+                    epsilonList.Add(epsilon);
 
                 }
 
-                // Adjust A
-                for (int i = 0; i < 2; i++)
+                //Re-estimate A
+                for (int i = 0; i < N; i++) //N: state count
                 {
-                    for (int j = 0; j < 2; j++)
+                    for (int j = 0; j < N; j++)
                     {
-                        double num = 0.0;
-                        double den = 0.0;
-                        for (int l = 0; l < L; l++)
+                        double num = 0.0, den = 0.0;
+                        for (int l = 0; l < L; l++) //L: observation sequence count
                         {
-                            for (int t = 0; t < 9; t++)
+                            for (int t = 0; t < obsList[0].Length; t++)
                             {
-                                num += xis[l][t, i, j];
-                                den += gammas[l][t, i];
+                                num += epsilonList[l][t, i, j];
+                                den += gammaList[l][t, i];
                             }
                         }
                         A[i, j] = num / den;
                     }
                 }
-                // Adjust B
-                for (int j = 0; j < 2; j++)
+                //Re-estimate B
+                for (int j = 0; j < N; j++) //N: state count
                 {
-                    for (int k = 0; k < 2; k++)
+                    for (int k = 0; k < N; k++)
                     {
-                        double num = 0.0;
-                        double den = 0.0;
-                        for (int l = 0; l < L; l++)
+                        double num = 0.0, den = 0.0;
+                        for (int l = 0; l < L; l++) //observation sequence count
                         {
-                            for (int t = 0; t < obss[0].Length; t++)
+                            for (int t = 0; t < obsList[0].Length; t++)
                             {
-                                if (obss[l][t] == k) num += gammas[l][t, j];
-                                den += gammas[l][t, j];
+                                if (obsList[l][t] == k) 
+                                    num += gammaList[l][t, j];
+                                den += gammaList[l][t, j];
                             }
                         }
                         B[j, k] = num / den;
                     }
                 }
-
-            }
+            } //end of BW Loop
 
             return new HiddenMarkovModel(A, B, pi);
-      }
+        }
 
         //Forward probabilities function to be used in learning
         private static double[,] BWForward(double[,] A, double[,] B, double[] pi, int[] obs)
         {
+            int N = A.GetLength(0); //length of state-graph
+            int T = obs.Length; //length of observations
+            double[,] fwd = new double[T, N]; //probability matrix
 
-            int N = A.GetLength(0);
-            int T = obs.Length;
+            //initialization step
+            for (int i = 0; i < N; i++) //for each state i
+                fwd[0, i] = pi[i] * B[i, obs[0]];
 
-            // 1) Initialization
-            double[,] alpha = new double[T, N];
-            for (int i = 0; i < N; i++) alpha[0, i] = pi[i] * B[i, obs[0]];
-            // 2) Induction
-            for (int t = 0; t < T - 1; t++)
+            //recursion step
+            for (int t = 0; t < T - 1; t++) //for each time step t
             {
-                for (int j = 0; j < N; j++)
+                for (int j = 0; j < N; j++) //for each state j
                 {
                     double sum = 0;
-                    for (int i = 0; i < N; i++) sum += alpha[t, i] * A[i, j];
-                    alpha[t + 1, j] = sum * B[j, obs[t + 1]];
+                    for (int i = 0; i < N; i++) //i: s'
+                        sum += fwd[t, i] * A[i, j];
+                    fwd[t + 1, j] = sum * B[j, obs[t + 1]];
                 }
             }
 
-            return alpha;
+            return fwd;
         }
 
         //Backward probabilities function to be used in learning
         static double[,] BWBackward(double[,] A, double[,] B, double[] pi, int[] obs)
         {
 
-            int N = A.GetLength(0);
-            int T = obs.Length;
+            int N = A.GetLength(0); //length of state-graph
+            int T = obs.Length; //length of observations
+            double[,] bwd = new double[T, N]; //probability matrix
 
-            // 1) Initialization
-            double[,] beta = new double[T, N];
-            for (int i = 0; i < N; i++) beta[T - 1, i] = 1;
-            // 2) Induction
-            for (int t = T - 2; t >= 0; t--)
+            //initialization step 
+            for (int i = 0; i < N; i++) //for each state i
+                bwd[T - 1, i] = 1;
+
+            //recursion step
+            for (int t = T - 2; t >= 0; t--) //for each time step t
             {
-                for (int i = 0; i < N; i++)
+                for (int i = 0; i < N; i++) //for each state i
                 {
-                    beta[t, i] = 0;
-                    for (int j = 0; j < N; j++) beta[t, i] += A[i, j] * B[j, obs[t + 1]] * beta[t + 1, j];
+                    bwd[t, i] = 0;
+                    for (int j = 0; j < N; j++) 
+                        bwd[t, i] += A[i, j] * B[j, obs[t + 1]] * bwd[t + 1, j];
                 }
             }
 
-            return beta;
+            return bwd;
         }
     }
 
@@ -512,9 +494,10 @@ learn           Part 3: creates a hidden markov model given observation list usi
         public double[,] B;
         public double[] Pi;
 
+        //constructor from model.txt file
         public HiddenMarkovModel(List<String> lines)
         {
-            // Find out where data begins
+            // find beginning of matrices
             int A_index = lines.IndexOf("A");
             int B_index = lines.IndexOf("B");
             int pi_index = lines.IndexOf("Pi");
@@ -553,6 +536,7 @@ learn           Part 3: creates a hidden markov model given observation list usi
 
         }
 
+        //constructor using matrices
         public HiddenMarkovModel(double[,] A, double[,] B, double[] Pi) {
             this.A = A;
             this.B = B;
